@@ -75,6 +75,10 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [filter, setFilter] = useState("");
+  const layout = load<{ left: number; right: number } | null>("cekkan.layout", null);
+  const [leftW, setLeftW] = useState(layout?.left ?? 270);
+  const [rightW, setRightW] = useState(layout?.right ?? 440);
+  const dragRef = useRef<{ side: "left" | "right"; startX: number; startW: number } | null>(null);
   const [foldersOpen, setFoldersOpen] = useState<Set<string>>(new Set());
   const [ask, setAsk] = useState<Ask | null>(null);
   const [saveModal, setSaveModal] = useState<{ name: string; collectionId: string; asNew: boolean } | null>(null);
@@ -104,6 +108,24 @@ export default function App() {
     localStorage.setItem("cekkan.envs", JSON.stringify(envState));
   }, [envState]);
 
+  useEffect(() => {
+    localStorage.setItem("cekkan.layout", JSON.stringify({ left: leftW, right: rightW }));
+  }, [leftW, rightW]);
+
+  useEffect(() => {
+    const onResize = () => {
+      setLeftW((w) => clampWidth(w, 200, Math.min(480, window.innerWidth - rightW - 320)));
+      setRightW((w) => clampWidth(w, 260, Math.min(720, window.innerWidth - leftW - 320)));
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [leftW, rightW]);
+
+  function resetLayout() {
+    setLeftW(270);
+    setRightW(440);
+  }
+
   const patch = (p: Partial<Tab>) =>
     setTabs((ts) => ts.map((t) => (t.id === active.id ? { ...t, ...p, dirty: true } : t)));
   const setAuth = (p: Partial<Auth>) => patch({ auth: { ...active.auth, ...p } });
@@ -114,7 +136,7 @@ export default function App() {
     const doc = docOf(active);
     const url = buildUrl(doc, sub);
     if (!/^https?:\/\//i.test(url)) {
-      setError("URL harus diawali http:// atau https:// (cek env base_url)");
+      setError("URL must start with http:// or https:// (check base_url in env)");
       return;
     }
 
@@ -187,7 +209,7 @@ export default function App() {
         ].slice(0, 100),
       );
     } catch (e) {
-      setError(timedOut ? `Timeout setelah ${doc.timeoutMs} ms` : e instanceof Error ? e.message : String(e));
+      setError(timedOut ? `Timeout after ${doc.timeoutMs} ms` : e instanceof Error ? e.message : String(e));
     } finally {
       window.clearTimeout(timer);
       setLoading(false);
@@ -292,7 +314,7 @@ export default function App() {
 
   function renameNode(n: Node) {
     setAsk({
-      title: "Nama baru",
+      title: "New name",
       value: n.name,
       onOk: (v) => {
         if (v.trim()) setCollections((cs) => updateNode(cs, n.id, (x) => ({ ...x, name: v.trim() })));
@@ -304,8 +326,8 @@ export default function App() {
 
   function deleteNode(n: Node) {
     setAsk({
-      title: `Hapus "${n.name}"?`,
-      okLabel: "Hapus",
+      title: `Delete "${n.name}"?`,
+      okLabel: "Delete",
       dangerous: true,
       onOk: () => {
         setCollections((cs) => removeNode(cs, n.id));
@@ -339,7 +361,7 @@ export default function App() {
 
   function newCollection() {
     setAsk({
-      title: "Nama collection",
+      title: "Collection name",
       value: "",
       onOk: (v) => {
         if (!v.trim()) return;
@@ -352,7 +374,7 @@ export default function App() {
 
   function newFolderIn(parentId: string) {
     setAsk({
-      title: "Nama folder",
+      title: "Folder name",
       value: "",
       onOk: (v) => {
         if (!v.trim()) return;
@@ -375,7 +397,7 @@ export default function App() {
           ? importHttpie(json)
           : importPostman(json);
       if (countRequests(imported) === 0) {
-        throw new Error("Tidak ada request yang bisa diimpor — hanya Postman v2.1, HTTPie, atau export cekkan");
+        throw new Error("No requests could be imported — only Postman v2.1, HTTPie, or Cekkan export");
       }
       setCollections((cs) => [...cs, ...imported]);
       setFoldersOpen((s) => {
@@ -384,7 +406,7 @@ export default function App() {
         return next;
       });
     } catch (e) {
-      setError(`Import gagal: ${e instanceof Error ? e.message : String(e)}`);
+      setError(`Import failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -400,7 +422,7 @@ export default function App() {
         contents: JSON.stringify({ app: "cekkan", version: 1, collections }, null, 2),
       });
     } catch (e) {
-      setError(`Export gagal: ${e instanceof Error ? e.message : String(e)}`);
+      setError(`Export failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -412,7 +434,7 @@ export default function App() {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1200);
     } catch (e) {
-      setError(`Copy gagal: ${e instanceof Error ? e.message : String(e)}`);
+      setError(`Copy failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -430,7 +452,7 @@ export default function App() {
 
   function addProfile() {
     setAsk({
-      title: "Nama env",
+      title: "Environment name",
       value: "",
       onOk: (v) => {
         if (!v.trim()) return;
@@ -456,6 +478,24 @@ export default function App() {
     }
   }, [raw]);
   const showBody = pretty ? (jsonBody ?? raw) : raw;
+
+  const canFormatBody = useMemo(() => {
+    if (active.bodyMode !== "raw" || active.rawType !== "json" || !active.rawBody.trim()) return false;
+    try {
+      JSON.parse(active.rawBody);
+      return true;
+    } catch {
+      return false;
+    }
+  }, [active.bodyMode, active.rawType, active.rawBody]);
+
+  function formatBody() {
+    try {
+      patch({ rawBody: JSON.stringify(JSON.parse(active.rawBody), null, 2) });
+    } catch {
+      /* invalid JSON: button disabled anyway */
+    }
+  }
 
   const q = filter.trim().toLowerCase();
   const filteredHistory = useMemo(() => {
@@ -492,13 +532,13 @@ export default function App() {
             <span className="tw">{foldersOpen.has(n.id) ? "▾" : "▸"}</span>
             <span className="tree-name">{n.name}</span>
             <span className="tree-actions" onClick={(e) => e.stopPropagation()}>
-              <button title="Folder baru" onClick={() => newFolderIn(n.id)}>
+              <button title="New folder" onClick={() => newFolderIn(n.id)}>
                 +
               </button>
               <button title="Rename" onClick={() => renameNode(n)}>
                 ✎
               </button>
-              <button title="Hapus" onClick={() => deleteNode(n)}>
+              <button title="Delete" onClick={() => deleteNode(n)}>
                 ×
               </button>
             </span>
@@ -518,7 +558,7 @@ export default function App() {
               <button title="Rename" onClick={() => renameNode(n)}>
                 ✎
               </button>
-              <button title="Hapus" onClick={() => deleteNode(n)}>
+              <button title="Delete" onClick={() => deleteNode(n)}>
                 ×
               </button>
             </span>
@@ -531,20 +571,20 @@ export default function App() {
 
   return (
     <div className="app">
-      <aside className="side">
+      <aside className="side" style={{ width: leftW }}>
         <h1>
-          <img src={logo} alt="" /> cekkan
+          <img src={logo} alt="" /> Cekkan
         </h1>
-        <input className="search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Cari request…" />
+        <input className="search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Search requests…" />
 
         <section className="collections">
           <div className="side-head">
             <span>Collections ({countRequests(collections)})</span>
             <span className="head-actions">
-              <button className="ghost" title="Collection baru" onClick={newCollection}>
+              <button className="ghost" title="New collection" onClick={newCollection}>
                 +
               </button>
-              <button className="ghost" title="Import JSON (Postman/cekkan)" onClick={() => void importFile()}>
+              <button className="ghost" title="Import JSON (Postman/Cekkan)" onClick={() => void importFile()}>
                 ↧
               </button>
               <button className="ghost" title="Export JSON" onClick={() => void exportFile()}>
@@ -554,7 +594,7 @@ export default function App() {
           </div>
           <div className="tree">
             {filteredCollections.length === 0 && (
-              <p className="empty">{collections.length ? "Tidak ada yang cocok." : "Simpan request untuk mulai."}</p>
+              <p className="empty">{collections.length ? "Nothing matches." : "Save a request to get started."}</p>
             )}
             {renderTree(filteredCollections)}
           </div>
@@ -568,7 +608,7 @@ export default function App() {
             </button>
           </div>
           <div className="history">
-            {filteredHistory.length === 0 && <p className="empty">{history.length ? "Tidak ada yang cocok." : "Belum ada request."}</p>}
+            {filteredHistory.length === 0 && <p className="empty">{history.length ? "Nothing matches." : "No requests yet."}</p>}
             {filteredHistory.map((h) => (
               <button key={h.id} className="hist-item" onClick={() => openHistory(h)} title={`${h.request.method} ${h.request.url}`}>
                 <span className={"code " + codeClass(h.status)}>{h.status ?? "ERR"}</span>
@@ -584,10 +624,10 @@ export default function App() {
           <div className="side-head">
             <span>Env</span>
             <span className="head-actions">
-              <button className="ghost" title="Env baru" onClick={addProfile}>
+              <button className="ghost" title="New environment" onClick={addProfile}>
                 +
               </button>
-              <button className="ghost" title="Hapus env" onClick={deleteProfile} disabled={envState.profiles.length < 2}>
+              <button className="ghost" title="Delete environment" onClick={deleteProfile} disabled={envState.profiles.length < 2}>
                 ×
               </button>
             </span>
@@ -605,6 +645,24 @@ export default function App() {
           <textarea className="env" value={profile?.text ?? ""} onChange={(e) => patchProfile(e.target.value)} spellCheck={false} />
         </section>
       </aside>
+
+      <div
+        className="splitter"
+        title="Drag to resize · double-click to reset"
+        onPointerDown={(e) => {
+          dragRef.current = { side: "left", startX: e.clientX, startW: leftW };
+          e.currentTarget.setPointerCapture(e.pointerId);
+        }}
+        onPointerMove={(e) => {
+          const d = dragRef.current;
+          if (!d || d.side !== "left") return;
+          setLeftW(clampWidth(d.startW + e.clientX - d.startX, 200, Math.min(480, window.innerWidth - rightW - 320)));
+        }}
+        onPointerUp={() => {
+          dragRef.current = null;
+        }}
+        onDoubleClick={resetLayout}
+      />
 
       <section className="pane center">
         <div className="tabbar">
@@ -630,11 +688,11 @@ export default function App() {
               </button>
             </div>
           ))}
-          <button className="ghost" title="Tab baru" onClick={newTab}>
+          <button className="ghost" title="New tab" onClick={newTab}>
             +
           </button>
           <span className="spacer" />
-          <button className="ghost" onClick={() => onSave(false)} title="Simpan (⌘S)">
+          <button className="ghost" onClick={() => onSave(false)} title="Save (⌘S)">
             Save
           </button>
           <button className="ghost" onClick={() => onSave(true)}>
@@ -731,8 +789,13 @@ export default function App() {
                     <option value="html">HTML</option>
                   </select>
                 )}
+                {active.bodyMode === "raw" && active.rawType === "json" && (
+                  <button className="ghost" onClick={formatBody} disabled={!canFormatBody} title="Prettify JSON body">
+                    Format
+                  </button>
+                )}
               </div>
-              {active.bodyMode === "none" && <p className="empty">Tanpa body.</p>}
+              {active.bodyMode === "none" && <p className="empty">No body.</p>}
               {active.bodyMode === "raw" && (
                 <textarea
                   className="body-input"
@@ -759,8 +822,8 @@ export default function App() {
               )}
               {active.bodyMode === "binary" && (
                 <div className="file-row">
-                  <input value={active.binaryPath} onChange={(e) => patch({ binaryPath: e.target.value })} placeholder="path file…" spellCheck={false} />
-                  <button onClick={() => void pickBinary()}>Pilih file</button>
+                  <input value={active.binaryPath} onChange={(e) => patch({ binaryPath: e.target.value })} placeholder="file path…" spellCheck={false} />
+                  <button onClick={() => void pickBinary()}>Choose file</button>
                 </div>
               )}
             </div>
@@ -805,7 +868,7 @@ export default function App() {
                     <input value={active.auth.apiValue} onChange={(e) => setAuth({ apiValue: e.target.value })} placeholder="{{api_key}}" spellCheck={false} />
                   </label>
                   <label>
-                    Kirim di
+                    Send in
                     <select value={active.auth.apiIn} onChange={(e) => setAuth({ apiIn: e.target.value as Auth["apiIn"] })}>
                       <option value="header">Header</option>
                       <option value="query">Query</option>
@@ -818,7 +881,25 @@ export default function App() {
         </div>
       </section>
 
-      <section className="pane right">
+      <div
+        className="splitter"
+        title="Drag to resize · double-click to reset"
+        onPointerDown={(e) => {
+          dragRef.current = { side: "right", startX: e.clientX, startW: rightW };
+          e.currentTarget.setPointerCapture(e.pointerId);
+        }}
+        onPointerMove={(e) => {
+          const d = dragRef.current;
+          if (!d || d.side !== "right") return;
+          setRightW(clampWidth(d.startW - (e.clientX - d.startX), 260, Math.min(720, window.innerWidth - leftW - 320)));
+        }}
+        onPointerUp={() => {
+          dragRef.current = null;
+        }}
+        onDoubleClick={resetLayout}
+      />
+
+      <section className="pane right" style={{ width: rightW }}>
         <div className="resp-bar">
           {status ? (
             <>
@@ -858,8 +939,8 @@ export default function App() {
           </>
         )}
 
-        {!error && raw === "" && !loading && <p className="empty">Tekan Send (⌘↩) untuk mengirim request.</p>}
-        {loading && <p className="empty">Mengirim…</p>}
+        {!error && raw === "" && !loading && <p className="empty">Press Send (⌘↩) to send a request.</p>}
+        {loading && <p className="empty">Sending…</p>}
       </section>
 
       {ask && (
@@ -879,7 +960,7 @@ export default function App() {
             )}
             <div className="modal-actions">
               <button type="button" className="ghost" onClick={() => setAsk(null)}>
-                Batal
+                Cancel
               </button>
               <button type="submit" className={ask.dangerous ? "danger" : "primary"}>
                 {ask.okLabel ?? "OK"}
@@ -901,18 +982,18 @@ export default function App() {
               setSaveModal(null);
             }}
           >
-            <h2>Simpan request</h2>
+            <h2>Save request</h2>
             <input
               autoFocus
               value={saveModal.name}
               onChange={(e) => setSaveModal({ ...saveModal, name: e.target.value })}
-              placeholder="Nama request"
+              placeholder="Request name"
             />
             <select
               value={saveModal.collectionId}
               onChange={(e) => setSaveModal({ ...saveModal, collectionId: e.target.value })}
             >
-              {folderChoices.length === 0 && <option value="">{DEFAULT_COLLECTION} (baru)</option>}
+              {folderChoices.length === 0 && <option value="">{DEFAULT_COLLECTION} (new)</option>}
               {folderChoices.map((f) => (
                 <option key={f.id} value={f.id}>
                   {f.label}
@@ -921,10 +1002,10 @@ export default function App() {
             </select>
             <div className="modal-actions">
               <button type="button" className="ghost" onClick={() => setSaveModal(null)}>
-                Batal
+                Cancel
               </button>
               <button type="submit" className="primary">
-                Simpan
+                Save
               </button>
             </div>
           </form>
@@ -961,20 +1042,20 @@ function KVEditor({
           <input
             value={r.value}
             onChange={(e) => patchRow(r.id, { value: e.target.value })}
-            placeholder={r.file ? "path file…" : "value"}
+            placeholder={r.file ? "file path…" : "value"}
             spellCheck={false}
           />
           {withFiles && (
-            <button className="ghost tiny" title={r.file ? "Jadikan teks" : "Jadikan file"} onClick={() => patchRow(r.id, { file: !r.file })}>
+            <button className="ghost tiny" title={r.file ? "Make text" : "Make file"} onClick={() => patchRow(r.id, { file: !r.file })}>
               {r.file ? "file" : "text"}
             </button>
           )}
           {withFiles && r.file && (
-            <button className="ghost" title="Pilih file" onClick={() => void pickFile(r.id)}>
+            <button className="ghost" title="Choose file" onClick={() => void pickFile(r.id)}>
               …
             </button>
           )}
-          <button className="ghost" onClick={() => setRows((rs) => rs.filter((x) => x.id !== r.id))} title="Hapus">
+          <button className="ghost" onClick={() => setRows((rs) => rs.filter((x) => x.id !== r.id))} title="Delete">
             ×
           </button>
         </div>
@@ -1012,6 +1093,10 @@ function highlightJson(src: string): ReactNode {
   }
   if (last < src.length) out.push(src.slice(last));
   return <>{out}</>;
+}
+
+function clampWidth(v: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, v));
 }
 
 function codeClass(code: number | null) {

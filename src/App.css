@@ -81,19 +81,19 @@ button:disabled {
 
 .side {
   width: 270px;
-  min-width: 270px;
+  min-width: 200px;
   background: var(--panel);
-  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   padding: 10px;
   gap: 10px;
+  flex-shrink: 0;
 }
 
 .side h1 {
-  font-size: 14px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
   margin: 0;
   color: var(--accent);
   display: flex;
@@ -310,13 +310,39 @@ button:disabled {
 }
 
 .center {
-  flex: 1 1 46%;
-  border-right: 1px solid var(--border);
+  flex: 1 1 0;
 }
 
 .right {
-  flex: 1 1 42%;
-  min-width: 300px;
+  flex: 0 0 auto;
+  width: 440px;
+  min-width: 260px;
+}
+
+.splitter {
+  flex: 0 0 5px;
+  position: relative;
+  cursor: col-resize;
+  background: var(--bg);
+  touch-action: none;
+}
+
+.splitter::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 1px;
+  background: var(--border);
+}
+
+.splitter:hover::after,
+.splitter:active::after {
+  left: 1px;
+  width: 3px;
+  background: var(--accent);
+  opacity: 0.45;
 }
 
 .bar {

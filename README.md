@@ -1,4 +1,4 @@
-# cekkan
+# Cekkan
 
 A fast, local-first desktop API client — a lightweight alternative to Postman and HTTPie, built with [Tauri 2](https://tauri.app), React and Rust.
 
@@ -32,7 +32,7 @@ No account, no cloud, no telemetry. Requests go straight from your machine.
 Prebuilt macOS builds (Apple Silicon) are attached to [Releases](../../releases). The app is ad-hoc signed; if macOS blocks it, right-click → **Open**, or run:
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/cekkan.app
+xattr -dr com.apple.quarantine /Applications/Cekkan.app
 ```
 
 Windows and Linux builds can be produced from source.
